@@ -146,6 +146,7 @@ NOTES:
  *   Rating: 1
  */
 int signMask(void) {
+  // 1<<31 = 0b10000000_00000000_00000000_00000000。
   return 1<<31;
 }
 
@@ -170,6 +171,7 @@ int bitXor(int x, int y) {
  *   Rating: 3
  */
 int negativePart(int x){
+  // sgn 为 32 个 0（非负）或 32 个 1（负数）。
   int sgn = x >> 31;
   return (~x + 1) & sgn;
 }
@@ -188,6 +190,7 @@ int negativePart(int x){
 int copyByteWithin(int x, int src, int dst) {
   src = src << 3;
   dst = dst << 3;
+  // 0xff = 0b11111111；移至 dst 后取反，清空目标字节。
   int mask = ~(0xff << dst);
   return (mask & x) | ((x >> src & 0xff) << dst);
 }
@@ -202,6 +205,7 @@ int copyByteWithin(int x, int src, int dst) {
  *   Rating: 4
  */
 int logicalShift(int x, int n) {
+  // 最高位掩码参考P1；mask 的低 (32-n) 位为 1，其余位为 0。
   int mask = ~(1<<31 >> n << 1);
   return mask & (x >> n);
 }
@@ -216,6 +220,7 @@ int logicalShift(int x, int n) {
  */
 int swapNibblePairs(int x) {
   int i = 0x0f;
+  // mask = 0b00001111_00001111_00001111_00001111。
   int mask = i<<24 | i<<16 | i<<8 | i;
 
   int l = (mask & x) << 4;
@@ -266,7 +271,10 @@ int oddParity(int x) {
  *   Rating: 5
  */
 int rotateRightBits(int x, int n) {
-  int m = 32 + ~(n & 31);
+  // 31 = 0b11111；取低 5 位，保证移位量在 0-31 内。
+  n = n & 31;
+  // m = 31-n；分两次左移，避免 n=0 时出现一次左移 32 位。
+  int m = 32 + ~n;
 
   int mask = ~(1<<31 >> n << 1);
   int l = mask & (x >> n);
@@ -286,6 +294,8 @@ int rotateRightBits(int x, int n) {
  *   Rating: 5
  */
 int roundEvenPow2(int x, int n) {
+  // ~0 = 0b11111111_11111111_11111111_11111111，即 -1。
+  // mid 只有第 (n-1) 位为 1；bias = mid-1+商的奇偶位。
   int mid = 1 << (n + ~0);
   int bias = mid + ((x >> n) & 1) + ~0;
   
@@ -358,6 +368,8 @@ int mul5Sat(int x) {
 
   int o = ((x ^ x2) | (x ^ x4) | (x ^ x5)) >> 31;
 
+  // MAX 是饱和值：非负时为 0b01111111_11111111_11111111_11111111，
+  // 负数时为 0b10000000_00000000_00000000_00000000。
   int MAX = (1 << 31) + ~(x >> 31);
 
   return (o & MAX) | (~o & x5);
@@ -401,6 +413,9 @@ int classifyAdd3(int x, int y, int z) {
  */
 unsigned floatScaleThreeHalves(unsigned uf) {
   //almost by ai
+  // 0x80000000 = 0b10000000_00000000_00000000_00000000（符号位）。
+  // 0xff = 0b11111111（8 位阶码）；0x007fffff 为低 23 位的 1：
+  // 0b00000000_01111111_11111111_11111111。
   unsigned sgn = uf & 0x80000000;
   unsigned exp = (uf >> 23) & 0xff;
   unsigned f = uf & 0x007fffff;
@@ -409,13 +424,16 @@ unsigned floatScaleThreeHalves(unsigned uf) {
 
   if (exp == 0) {
       unsigned tmp = f * 3;
+      // 3 = 0b11；低两位为 11 时，除二的中点舍入需要进位。
       unsigned nf = (tmp >> 1) + ((tmp & 3) == 3);
       return sgn | nf;
   }
 
+  // 0x00800000 = 0b00000000_10000000_00000000_00000000（隐含的 1）。
   unsigned M = 0x00800000 | f;
   unsigned tmp = M * 3;
 
+  // 0x02000000 = 0b00000010_00000000_00000000_00000000，即 2^25。
   if (tmp < 0x02000000) {
       unsigned M_new = (tmp >> 1) + ((tmp & 3) == 3);
       return sgn | (exp << 23) | (M_new & 0x007fffff);
@@ -423,10 +441,12 @@ unsigned floatScaleThreeHalves(unsigned uf) {
 
   exp = exp + 1;
   if (exp >= 0xff) {
+      // 0x7f800000 = 0b01111111_10000000_00000000_00000000（正无穷）。
       return sgn | 0x7f800000;
   }
 
   int rem = tmp & 3;
+  // 4 = 0b100，标记右移两位后保留部分的最低位。
   int round_up = (rem == 3) || (rem == 2 && (tmp & 4));
   unsigned M_new = (tmp >> 2) + round_up;
 
@@ -447,19 +467,23 @@ unsigned floatScaleThreeHalves(unsigned uf) {
  */
 unsigned floatRoundEven(unsigned uf) {
   //almost by ai
+  // 符号、阶码、尾数掩码的二进制形式参考P15。
   unsigned sgn = uf & 0x80000000;
   unsigned exp = (uf >> 23) & 0xff;
   unsigned f = uf & 0x007fffff;
 
+  // 150 = 0b10010110 = 127+23；126 = 0b01111110 = 127-1。
   if (exp >= 150) return uf;
   if (exp < 126) return sgn;
 
   if (exp == 126) {
       if (f == 0) return sgn;
+      // 127<<23 = 0b00111111_10000000_00000000_00000000，即 +1.0。
       return sgn | (127 << 23);
   }
 
   int shift = 150 - exp;
+  // mask 的低 shift 位全为 1；half 只有第 (shift-1) 位为 1。
   unsigned mask = (1 << shift) - 1;
   unsigned half = 1 << (shift - 1);
   unsigned fp = uf & mask;
@@ -491,16 +515,20 @@ unsigned float_i2f(int x) {
   unsigned ux = x;
   if (x < 0) ux = -ux;
 
-  int exp = 31 + 127;
-  while ((int)ux > 0) {
+  // 158 = 0b10011110 = 127+31，随最高有效位左移而递减。
+  int exp = 158;
+  while (!(ux & 0x80000000)) {
       ux = ux << 1;
       exp = exp - 1;
   }
 
+  // 0xff = 0b11111111；0x80 = 0b10000000（半程）；
+  // 0x100 = 0b1_00000000（保留部分的最低位）。
   unsigned fp = ux & 0xff;
   int round_up = (fp > 0x80) || ((fp == 0x80) && (ux & 0x100));
 
   unsigned mantissa = (ux >> 8) + round_up;
+  // 1<<24 = 0b00000001_00000000_00000000_00000000（尾数进位）。
   if (mantissa & (1 << 24)) {
       exp = exp + 1;
   }
@@ -520,12 +548,15 @@ unsigned float_i2f(int x) {
  */
 int bitCount(int x) {
   int m1 = 0x55 | (0x55 << 8);
+  // 扩展后 m1 = 0b01010101_01010101_01010101_01010101。
   m1 = m1 | (m1 << 16); 
 
   int m2 = 0x33 | (0x33 << 8);
+  // 扩展后 m2 = 0b00110011_00110011_00110011_00110011。
   m2 = m2 | (m2 << 16);
 
   int m4 = 0x0f | (0x0f << 8);
+  // 扩展后 m4 = 0b00001111_00001111_00001111_00001111。
   m4 = m4 | (m4 << 16);
 
   x = (x & m1) + ((x >> 1) & m1);
@@ -535,6 +566,7 @@ int bitCount(int x) {
   x = x + (x >> 8);
   x = x + (x >> 16);
 
+  // 0x3f = 0b00111111，保留可表示计数 0-32 的低 6 位。
   return x & 0x3f;
 }
 
@@ -548,10 +580,15 @@ int bitCount(int x) {
  *   Rating: 10
  */
 int bitReverse(int x) {
+  // m16 = 0b00000000_00000000_11111111_11111111。
   int m16 = (0xff << 8) | 0xff;
+  // m8  = 0b00000000_11111111_00000000_11111111。
   int m8 = m16 ^ (m16 << 8);
+  // m4  = 0b00001111_00001111_00001111_00001111。
   int m4 = m8 ^ (m8 << 4);
+  // m2  = 0b00110011_00110011_00110011_00110011。
   int m2 = m4 ^ (m4 << 2);
+  // m1  = 0b01010101_01010101_01010101_01010101。
   int m1 = m2 ^ (m2 << 1);
 
   x = ((x >> 1) & m1) | ((x & m1) << 1);
